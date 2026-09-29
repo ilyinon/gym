@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Gym",
+  "version": "0.1.0",
+  "identifier": "com.oilyin.gym",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Gym",
+        "width": 800,
+        "height": 600,
+        "minWidth": 640,
+        "minHeight": 480,
+        "center": true,
+        "visible": false
+      },
+      {
+        "label": "reminder",
+        "title": "Gym — пора размяться",
+        "url": "index.html",
+        "width": 400,
+        "height": 540,
+        "minWidth": 360,
+        "minHeight": 420,
+        "center": true,
+        "visible": false,
+        "focus": true,
+        "resizable": true,
+        "maximizable": false,
+        "minimizable": false,
+        "alwaysOnTop": false,
+        "skipTaskbar": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
