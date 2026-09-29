@@ -40,6 +40,12 @@ input:disabled {
   opacity: 0.58;
 }
 
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid rgba(61, 128, 80, 0.45);
+  outline-offset: 3px;
+}
+
 .reminder-shell {
   min-height: 100vh;
   padding: 28px 26px 22px;
@@ -224,5 +230,13 @@ input:disabled {
 
   .reminder-exercise {
     grid-template-columns: minmax(0, 1fr) 78px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
   }
 }

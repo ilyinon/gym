@@ -8,6 +8,7 @@ use tauri::{
 use crate::{
     domain::{PauseRemindersInput, SchedulerSnapshot},
     infrastructure::Database,
+    logger,
     scheduler::{current_time_utc_ms, next_due_from_utc, SchedulerHandle},
     windows,
 };
@@ -73,7 +74,11 @@ pub fn setup(app: &mut App) -> tauri::Result<()> {
         .show_menu_on_left_click(true)
         .on_menu_event(handle_menu_event);
     if let Some(icon) = app.default_window_icon().cloned() {
-        builder = builder.icon(icon).icon_as_template(true);
+        // macOS template icons adapt to light/dark menu bars. Linux keeps the
+        // original colored application icon because template icons are macOS-only.
+        builder = builder
+            .icon(icon)
+            .icon_as_template(cfg!(target_os = "macos"));
     }
     builder.build(app)?;
 
@@ -114,9 +119,9 @@ fn start_workout(app_handle: &AppHandle) {
                 windows::present_reminder(app_handle, &settings, true);
                 app_handle.state::<SchedulerHandle>().wake();
             }
-            Err(error) => eprintln!("tray could not load settings: {error}"),
+            Err(error) => logger::warn(format!("tray could not load settings: {error}")),
         },
-        Err(error) => eprintln!("tray could not start workout: {error}"),
+        Err(error) => logger::warn(format!("tray could not start workout: {error}")),
     }
 }
 
@@ -129,7 +134,7 @@ fn pause_until(app_handle: &AppHandle, until_utc: i64) {
         },
         current_time_utc_ms(),
     ) {
-        eprintln!("tray could not pause reminders: {error}");
+        logger::warn(format!("tray could not pause reminders: {error}"));
         return;
     }
     app_handle.state::<SchedulerHandle>().wake();
@@ -142,7 +147,7 @@ fn resume(app_handle: &AppHandle) {
         .settings()
         .and_then(|settings| database.resume_reminders(now, next_due_from_utc(&settings, now)));
     if let Err(error) = result {
-        eprintln!("tray could not resume reminders: {error}");
+        logger::warn(format!("tray could not resume reminders: {error}"));
         return;
     }
     app_handle.state::<SchedulerHandle>().wake();
@@ -171,7 +176,7 @@ pub(crate) fn refresh(app_handle: &AppHandle, snapshot: &SchedulerSnapshot) {
         .status
         .set_text(status_text(snapshot, current_time_utc_ms()))
     {
-        eprintln!("could not update tray status: {error}");
+        logger::warn(format!("could not update tray status: {error}"));
     }
     for result in [
         tray.pause_hour.set_enabled(!paused),
@@ -179,7 +184,7 @@ pub(crate) fn refresh(app_handle: &AppHandle, snapshot: &SchedulerSnapshot) {
         tray.resume.set_enabled(paused),
     ] {
         if let Err(error) = result {
-            eprintln!("could not update tray action: {error}");
+            logger::warn(format!("could not update tray action: {error}"));
         }
     }
 }

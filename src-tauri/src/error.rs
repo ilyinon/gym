@@ -30,6 +30,15 @@ pub struct CommandError {
 
 impl From<AppError> for CommandError {
     fn from(error: AppError) -> Self {
+        if matches!(
+            &error,
+            AppError::StateUnavailable
+                | AppError::Database(_)
+                | AppError::Io(_)
+                | AppError::System(_)
+        ) {
+            crate::logger::error(format!("command failed: {error}"));
+        }
         let code = match error {
             AppError::Validation(_) => "validation_error",
             AppError::NotFound(_) => "not_found",

@@ -90,6 +90,13 @@ export interface AppSnapshot {
   databasePath: string;
 }
 
+export interface AppInfo {
+  version: string;
+  databasePath: string;
+  logPath: string;
+  fatalError: string | null;
+}
+
 export interface WorkoutEntry {
   id: string;
   reminderId: string;

@@ -14,6 +14,14 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "check:offline": "node scripts/check-offline-sources.mjs",
+    "release:verify": "node scripts/verify-release.mjs",
+    "release:linux": "npm run release:verify && npm run tauri build -- --bundles deb,appimage",
+    "release:fedora": "npm run release:verify && npm run tauri build -- --bundles rpm,appimage",
+    "release:macos": "npm run release:verify && npm run tauri build -- --target universal-apple-darwin --bundles app,dmg",
+    "release:collect:linux": "node scripts/collect-release-artifacts.mjs linux",
+    "release:collect:fedora": "node scripts/collect-release-artifacts.mjs fedora",
+    "release:collect:macos": "node scripts/collect-release-artifacts.mjs macos",
     "lint": "eslint . --max-warnings=0",
     "lint:rust": "cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
     "format": "prettier --write . && cargo fmt --manifest-path src-tauri/Cargo.toml",
@@ -21,7 +29,7 @@
     "test:frontend": "vitest run",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test": "npm run test:frontend && npm run test:rust",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run lint:rust"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run check:offline && npm run release:verify && npm run test && npm run lint:rust"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

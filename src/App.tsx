@@ -22,6 +22,7 @@ import { validateWorkoutResults } from "./shared/reminderForm";
 import { formatTimestamp, minutesToTime, timeToMinutes } from "./shared/time";
 import type {
   AppSnapshot,
+  AppInfo,
   Exercise,
   HistoryDay,
   UpdateSettingsInput,
@@ -47,6 +48,7 @@ function editableSettings(snapshot: AppSnapshot): UpdateSettingsInput {
 }
 
 function App() {
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [settings, setSettings] = useState<UpdateSettingsInput | null>(null);
   const [newName, setNewName] = useState("");
@@ -93,37 +95,43 @@ function App() {
 
   useEffect(() => {
     let active = true;
-    void gymApi.getSnapshot().then(
-      (nextSnapshot) => {
+    void gymApi
+      .getAppInfo()
+      .then(async (nextAppInfo) => {
         if (!active) return;
-        applySnapshot(nextSnapshot);
-      },
-      (reason: unknown) => {
+        setAppInfo(nextAppInfo);
+        if (!nextAppInfo.fatalError) {
+          applySnapshot(await gymApi.getSnapshot());
+        }
+      })
+      .catch((reason: unknown) => {
         if (active) setError(errorMessage(reason));
-      },
-    );
+      });
     return () => {
       active = false;
     };
   }, [applySnapshot]);
 
   useEffect(() => {
+    if (!appInfo || appInfo.fatalError) return;
     const { dateFrom, dateTo } = localDayRange(historyDate);
     void gymApi
       .getHistory(dateFrom, dateTo)
       .then(setHistory, (reason: unknown) => setError(errorMessage(reason)));
-  }, [historyDate]);
+  }, [appInfo, historyDate]);
 
   useEffect(() => {
+    if (!appInfo || appInfo.fatalError) return;
     const { dateFrom, dateTo } = localDayRange(new Date());
     void gymApi
       .getHistory(dateFrom, dateTo)
       .then(setTodayHistory, (reason: unknown) => setError(errorMessage(reason)));
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [appInfo]);
 
   useEffect(() => {
+    if (!appInfo || appInfo.fatalError) return;
     let disposed = false;
     const unlisteners: Array<() => void> = [];
 
@@ -146,7 +154,7 @@ function App() {
       disposed = true;
       unlisteners.forEach((unlisten) => unlisten());
     };
-  }, [historyDate, loadHistory, loadSnapshot, loadTodayHistory]);
+  }, [appInfo, historyDate, loadHistory, loadSnapshot, loadTodayHistory]);
 
   useEffect(() => {
     if (!snapshot?.settings.notificationsEnabled) return;
@@ -209,7 +217,37 @@ function App() {
   const historyIsToday =
     localDayRange(historyDate).dateFrom === localDayRange(new Date()).dateFrom;
 
-  if (!snapshot || !settings) {
+  if (appInfo?.fatalError) {
+    return (
+      <main className="fatal-screen">
+        <section role="alert" aria-labelledby="fatal-title">
+          <span className="eyebrow">Gym не запустился</span>
+          <h1 id="fatal-title">Не удалось открыть локальные данные</h1>
+          <p>{appInfo.fatalError}</p>
+          <dl>
+            <div>
+              <dt>База данных</dt>
+              <dd>
+                <code>{appInfo.databasePath}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Диагностический лог</dt>
+              <dd>
+                <code>{appInfo.logPath}</code>
+              </dd>
+            </div>
+          </dl>
+          <p className="fatal-hint">
+            Исправьте права доступа или освободите место на диске, затем перезапустите
+            приложение. Закрытие этого окна завершит Gym.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!snapshot || !settings || !appInfo) {
     return (
       <main className="loading-screen">
         <div>
@@ -222,7 +260,10 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" id="main-content" aria-busy={busy}>
+      <a className="skip-link" href="#dashboard">
+        Перейти к текущему состоянию
+      </a>
       <header className="page-header">
         <div>
           <span className="eyebrow">Локальный помощник</span>
@@ -248,10 +289,19 @@ function App() {
         </div>
       </header>
 
+      <nav className="quick-nav" aria-label="Разделы приложения">
+        <a href="#dashboard">Сегодня</a>
+        <a href="#schedule">Расписание</a>
+        <a href="#exercises">Упражнения</a>
+        <a href="#history">История</a>
+        <a href="#about">О приложении</a>
+      </nav>
+
       {(error || notice) && (
         <div
           className={`message ${error ? "error-message" : "success-message"}`}
           role={error ? "alert" : "status"}
+          aria-live={error ? "assertive" : "polite"}
         >
           {error ?? notice}
         </div>
@@ -289,7 +339,11 @@ function App() {
         )}
 
       <div className="content-grid">
-        <section className="panel scheduler-panel" aria-labelledby="scheduler-title">
+        <section
+          className="panel scheduler-panel"
+          id="dashboard"
+          aria-labelledby="scheduler-title"
+        >
           <div className="section-heading">
             <div>
               <span className="section-number">Сегодня</span>
@@ -466,7 +520,7 @@ function App() {
           )}
         </section>
 
-        <section className="panel" aria-labelledby="schedule-title">
+        <section className="panel" id="schedule" aria-labelledby="schedule-title">
           <div className="section-heading">
             <div>
               <span className="section-number">Расписание</span>
@@ -569,6 +623,23 @@ function App() {
             ))}
           </div>
 
+          <div className="sound-preview">
+            <button
+              className="secondary-button"
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void execute(
+                  () => gymApi.previewReminderSound(),
+                  "Звуковое напоминание запущено",
+                )
+              }
+            >
+              ▶ Проверить звук
+            </button>
+            <span>«Come on!» — живая запись женского голоса</span>
+          </div>
+
           <button
             className="primary-button"
             type="button"
@@ -585,7 +656,7 @@ function App() {
           </button>
         </section>
 
-        <section className="panel" aria-labelledby="exercises-title">
+        <section className="panel" id="exercises" aria-labelledby="exercises-title">
           <div className="section-heading">
             <div>
               <span className="section-number">Набор</span>
@@ -742,7 +813,11 @@ function App() {
           </form>
         </section>
 
-        <section className="panel history-panel" aria-labelledby="history-title">
+        <section
+          className="panel history-panel"
+          id="history"
+          aria-labelledby="history-title"
+        >
           <div className="history-heading">
             <div>
               <span className="section-number">История</span>
@@ -833,12 +908,33 @@ function App() {
             </div>
           )}
         </section>
-      </div>
 
-      <footer className="database-path">
-        <span>Локальная база</span>
-        <code>{snapshot.databasePath}</code>
-      </footer>
+        <section className="panel about-panel" id="about" aria-labelledby="about-title">
+          <div>
+            <span className="section-number">Система</span>
+            <h2 id="about-title">О приложении</h2>
+            <p>Gym работает полностью локально и не выполняет сетевых запросов.</p>
+          </div>
+          <dl>
+            <div>
+              <dt>Версия</dt>
+              <dd>{appInfo.version}</dd>
+            </div>
+            <div>
+              <dt>Локальная база</dt>
+              <dd>
+                <code>{appInfo.databasePath}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Диагностический лог</dt>
+              <dd>
+                <code>{appInfo.logPath}</code>
+              </dd>
+            </div>
+          </dl>
+        </section>
+      </div>
     </main>
   );
 }

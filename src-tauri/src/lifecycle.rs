@@ -1,7 +1,10 @@
 use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
 
-use crate::error::{AppError, AppResult};
+use crate::{
+    error::{AppError, AppResult},
+    logger,
+};
 
 pub const AUTOSTART_ARGUMENT: &str = "--hidden";
 
@@ -24,13 +27,13 @@ pub fn reconcile_autostart(app_handle: &AppHandle, enabled: bool) {
     let current = match manager.is_enabled() {
         Ok(value) => value,
         Err(error) => {
-            eprintln!("could not read autostart state: {error}");
+            logger::warn(format!("could not read autostart state: {error}"));
             return;
         }
     };
     if current != enabled {
         if let Err(error) = set_autostart(app_handle, enabled) {
-            eprintln!("could not reconcile autostart state: {error}");
+            logger::warn(format!("could not reconcile autostart state: {error}"));
         }
     }
 }

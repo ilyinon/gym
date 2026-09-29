@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "Capability for the main and reminder windows",
   "windows": ["main", "reminder"],
-  "permissions": ["core:default", "notification:default"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "notification:default"
+  ]
 }

@@ -53,28 +53,27 @@ jobs:
       - name: Run all checks
         run: npm run check
 
-  build:
-    name: Build (${{ matrix.os }})
+  build-fedora:
+    name: Build (Fedora 44 x86_64)
     needs: quality
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, ubuntu-24.04]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-24.04
+    container: fedora:44
     steps:
+      - name: Install Fedora build dependencies
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            gcc gcc-c++ make git tar gzip xz \
+            webkit2gtk4.1-devel \
+            openssl-devel \
+            curl wget file \
+            libappindicator-gtk3-devel \
+            librsvg2-devel \
+            libxdo-devel \
+            patchelf \
+            rpm-build
+
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Install Linux dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            xdg-utils
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -95,3 +94,35 @@ jobs:
 
       - name: Build desktop application
         run: npm run tauri build -- --no-bundle
+
+  build-macos:
+    name: Build (macOS universal)
+    needs: quality
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "lts/*"
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build universal desktop application
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+        run: npm run tauri build -- --target universal-apple-darwin --bundles app

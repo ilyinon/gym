@@ -778,6 +778,11 @@ fn now_utc_ms() -> i64 {
 mod tests {
     use super::*;
     use crate::domain::WorkoutResultInput;
+    use std::{
+        sync::{Arc, Barrier},
+        thread,
+        time::Duration,
+    };
 
     fn new_exercise(name: &str, target_reps: i64) -> CreateExerciseInput {
         CreateExerciseInput {
@@ -813,6 +818,44 @@ mod tests {
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .unwrap();
         assert_eq!(version, migrations::CURRENT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn opening_a_directory_as_a_database_returns_a_recoverable_error() {
+        let directory = tempfile::tempdir().unwrap();
+        let error = Database::open(directory.path()).err().unwrap();
+        assert!(matches!(error, AppError::Database(_)));
+    }
+
+    #[test]
+    fn local_database_backup_can_be_restored() {
+        let directory = tempfile::tempdir().unwrap();
+        let database_path = directory.path().join("gym.sqlite3");
+        let backup_path = directory.path().join("gym-backup.sqlite3");
+        let database = Database::open(&database_path).unwrap();
+        database.create_exercise(new_exercise("Планка", 1)).unwrap();
+        database
+            .connection()
+            .unwrap()
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
+            .unwrap();
+        drop(database);
+
+        std::fs::copy(&database_path, &backup_path).unwrap();
+        let restored = Database::open(&backup_path).unwrap();
+        assert!(restored
+            .exercises()
+            .unwrap()
+            .iter()
+            .any(|exercise| exercise.name == "Планка"));
+        assert_eq!(
+            restored
+                .connection()
+                .unwrap()
+                .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                .unwrap(),
+            migrations::CURRENT_SCHEMA_VERSION
+        );
     }
 
     #[test]
@@ -1002,6 +1045,38 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_start_now_creates_exactly_one_pending_reminder() {
+        let database = Database::in_memory().unwrap();
+        let barrier = Arc::new(Barrier::new(6));
+        let handles = (0..6)
+            .map(|index| {
+                let database = database.clone();
+                let barrier = barrier.clone();
+                thread::spawn(move || {
+                    barrier.wait();
+                    database.start_reminder_now(1_000 + index).unwrap().id
+                })
+            })
+            .collect::<Vec<_>>();
+        let ids = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect::<Vec<_>>();
+
+        assert!(ids.iter().all(|id| id == &ids[0]));
+        let pending_count: i64 = database
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM reminders WHERE status = 'pending'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(pending_count, 1);
+    }
+
+    #[test]
     fn completing_a_reminder_is_transactional_and_idempotent() {
         let database = Database::in_memory().unwrap();
         let pending = database.start_reminder_now(1_000).unwrap();
@@ -1024,6 +1099,63 @@ mod tests {
             )
             .unwrap();
         assert_eq!(entry_count, 3);
+    }
+
+    #[test]
+    fn concurrent_completion_does_not_duplicate_workout_entries() {
+        let database = Database::in_memory().unwrap();
+        let pending = database.start_reminder_now(1_000).unwrap();
+        let input = completion_input(&database, &pending.id);
+        let barrier = Arc::new(Barrier::new(2));
+        let handles = (0..2)
+            .map(|index| {
+                let database = database.clone();
+                let input = input.clone();
+                let barrier = barrier.clone();
+                thread::spawn(move || {
+                    barrier.wait();
+                    database
+                        .complete_reminder(input, 2_000 + index, 902_000 + index)
+                        .unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+        for handle in handles {
+            assert_eq!(handle.join().unwrap().status, ReminderStatus::Completed);
+        }
+
+        let entry_count: i64 = database
+            .connection()
+            .unwrap()
+            .query_row(
+                "SELECT COUNT(*) FROM workout_entries WHERE reminder_id = ?1",
+                [&pending.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(entry_count, 3);
+    }
+
+    #[test]
+    fn temporary_sqlite_lock_returns_an_error_and_recovers() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("gym.sqlite3");
+        let database = Database::open(&path).unwrap();
+        database
+            .connection()
+            .unwrap()
+            .busy_timeout(Duration::from_millis(20))
+            .unwrap();
+        let blocker = Connection::open(&path).unwrap();
+        blocker.execute_batch("BEGIN EXCLUSIVE").unwrap();
+
+        let error = database
+            .create_exercise(new_exercise("Планка", 1))
+            .unwrap_err();
+        assert!(matches!(error, AppError::Database(_)));
+
+        blocker.execute_batch("ROLLBACK").unwrap();
+        assert!(database.create_exercise(new_exercise("Планка", 1)).is_ok());
     }
 
     #[test]

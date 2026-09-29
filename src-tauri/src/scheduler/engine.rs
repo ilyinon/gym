@@ -3,7 +3,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::watch;
 
-use crate::{infrastructure::Database, notifications, tray, windows};
+use crate::{infrastructure::Database, logger, notifications, sound, tray, windows};
 
 use super::{
     clock::{Clock, SystemClock},
@@ -56,7 +56,7 @@ async fn run_scheduler<C>(
         let scheduler_snapshot = match database.scheduler_snapshot() {
             Ok(snapshot) => snapshot,
             Err(error) => {
-                eprintln!("scheduler could not load state: {error}");
+                logger::error(format!("scheduler could not load state: {error}"));
                 wait_for_wake_or_timeout(&mut wake_receiver, ERROR_RETRY_INTERVAL_MS).await;
                 continue;
             }
@@ -83,7 +83,9 @@ async fn run_scheduler<C>(
             }
             SchedulerDecision::SetNextDue(next_due_at_utc) => {
                 if let Err(error) = database.set_next_due(next_due_at_utc) {
-                    eprintln!("scheduler could not persist next due time: {error}");
+                    logger::error(format!(
+                        "scheduler could not persist next due time: {error}"
+                    ));
                     Some(ERROR_RETRY_INTERVAL_MS)
                 } else {
                     emit_state_changed(&app_handle);
@@ -92,7 +94,7 @@ async fn run_scheduler<C>(
             }
             SchedulerDecision::ResumeAfterPause { next_due_at_utc } => {
                 if let Err(error) = database.resume_schedule(next_due_at_utc) {
-                    eprintln!("scheduler could not resume expired pause: {error}");
+                    logger::error(format!("scheduler could not resume expired pause: {error}"));
                     Some(ERROR_RETRY_INTERVAL_MS)
                 } else {
                     emit_state_changed(&app_handle);
@@ -110,7 +112,7 @@ async fn run_scheduler<C>(
                         Some(0)
                     }
                     Err(error) => {
-                        eprintln!("scheduler could not create reminder: {error}");
+                        logger::error(format!("scheduler could not create reminder: {error}"));
                         Some(ERROR_RETRY_INTERVAL_MS)
                     }
                 }
@@ -121,13 +123,22 @@ async fn run_scheduler<C>(
                     match database.mark_reminder_presented(&reminder.id, now_utc_ms) {
                         Ok(presented) => {
                             if let Err(error) = app_handle.emit("gym://reminder-due", &presented) {
-                                eprintln!("scheduler could not emit reminder event: {error}");
+                                logger::warn(format!(
+                                    "scheduler could not emit reminder event: {error}"
+                                ));
                             }
                             emit_state_changed(&app_handle);
                             let notification_delivered = notifications::send_workout_reminder(
                                 &app_handle,
                                 &scheduler_snapshot.settings,
                             );
+                            if scheduler_snapshot.settings.sound_enabled {
+                                if let Err(error) = sound::play_workout_reminder(&app_handle) {
+                                    logger::warn(format!(
+                                        "scheduler could not play reminder sound: {error}"
+                                    ));
+                                }
+                            }
                             let needs_fallback = scheduler_snapshot.settings.notifications_enabled
                                 && !notification_delivered;
                             windows::present_reminder(
@@ -138,7 +149,9 @@ async fn run_scheduler<C>(
                             last_presented_key = Some(presentation_key);
                         }
                         Err(error) => {
-                            eprintln!("scheduler could not mark reminder presented: {error}");
+                            logger::error(format!(
+                                "scheduler could not mark reminder presented: {error}"
+                            ));
                         }
                     }
                 }
@@ -167,7 +180,7 @@ async fn wait_for_wake_or_timeout(receiver: &mut watch::Receiver<u64>, delay_ms:
 
 fn emit_state_changed(app_handle: &AppHandle) {
     if let Err(error) = app_handle.emit("gym://state-changed", ()) {
-        eprintln!("scheduler could not emit state event: {error}");
+        logger::warn(format!("scheduler could not emit state event: {error}"));
     }
     tray::refresh_from_database(app_handle);
 }

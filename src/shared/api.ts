@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppSnapshot,
+  AppInfo,
   CompleteReminderInput,
   CreateExerciseInput,
   Exercise,
@@ -14,6 +15,7 @@ import type {
 } from "./types";
 
 export const gymApi = {
+  getAppInfo: () => invoke<AppInfo>("get_app_info"),
   getSnapshot: () => invoke<AppSnapshot>("get_app_snapshot"),
   getSettings: () => invoke<Settings>("get_settings"),
   updateSettings: (input: UpdateSettingsInput) =>
@@ -38,6 +40,7 @@ export const gymApi = {
   getHistory: (dateFrom: number, dateTo: number) =>
     invoke<HistoryDay>("get_history", { dateFrom, dateTo }),
   hideReminderWindow: () => invoke<void>("hide_reminder_window"),
+  previewReminderSound: () => invoke<void>("preview_reminder_sound"),
 };
 
 export function errorMessage(error: unknown): string {

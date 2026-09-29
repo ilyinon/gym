@@ -7,6 +7,11 @@ import {
   validateWorkoutResults,
   type WorkoutResults,
 } from "./shared/reminderForm";
+import {
+  playReminderAudio,
+  prepareReminderAudio,
+  type ReminderAudio,
+} from "./shared/reminderSound";
 import type { AppSnapshot } from "./shared/types";
 import "./ReminderApp.css";
 
@@ -21,6 +26,7 @@ function ReminderApp() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const firstInput = useRef<HTMLInputElement>(null);
+  const reminderAudio = useRef<ReminderAudio | null>(null);
 
   const applySnapshot = useCallback((snapshot: AppSnapshot) => {
     if (!snapshot.pendingReminder) {
@@ -42,6 +48,13 @@ function ReminderApp() {
   const loadReminder = useCallback(async () => {
     applySnapshot(await gymApi.getSnapshot());
   }, [applySnapshot]);
+
+  useEffect(() => {
+    reminderAudio.current = prepareReminderAudio();
+    return () => {
+      reminderAudio.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     void gymApi
@@ -67,6 +80,11 @@ function ReminderApp() {
         if (disposed) unlisten();
         else unlisteners.push(unlisten);
       }
+      const unlistenSound = await listen("gym://play-reminder-sound", () => {
+        if (reminderAudio.current) playReminderAudio(reminderAudio.current);
+      });
+      if (disposed) unlistenSound();
+      else unlisteners.push(unlistenSound);
     }
     void subscribe().catch((reason: unknown) => setError(errorMessage(reason)));
 
@@ -119,7 +137,7 @@ function ReminderApp() {
   );
 
   return (
-    <main className="reminder-shell">
+    <main className="reminder-shell" aria-busy={busy}>
       <header className="reminder-header">
         <span className="reminder-kicker">Gym</span>
         <h1>Пора размяться</h1>
@@ -183,7 +201,7 @@ function ReminderApp() {
         </div>
 
         {error && (
-          <p className="reminder-error" role="alert">
+          <p className="reminder-error" role="alert" aria-live="assertive">
             {error}
           </p>
         )}
