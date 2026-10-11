@@ -6,7 +6,7 @@
 
 ## Статус
 
-Шаг 7 реализован: GitHub Actions собирает Fedora 44 x86_64 `.rpm`/`.AppImage` и universal macOS `.dmg`, проверяет manifest-версии, changelog, установку пакетов, подпись/notarization и SHA-256. Tag-driven workflow публикует релиз только после успешных Fedora и macOS jobs.
+Шаг 7 реализован: GitHub Actions собирает Fedora 44 x86_64 `.rpm`/`.AppImage`, проверяет manifest-версии, changelog, установку пакетов и SHA-256. macOS `.dmg` собирается только локально.
 
 ## Стек
 

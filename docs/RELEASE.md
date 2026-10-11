@@ -32,25 +32,14 @@ npm run release:collect:macos
 ## GitHub release
 
 Workflow `.github/workflows/release.yml` запускается вручную либо тегом `vX.Y.Z`.
-Ручной запуск может создать ad-hoc macOS build. Для тега workflow требует полноценную
-Developer ID подпись и notarization.
-
-Необходимые repository secrets:
-
-- `APPLE_CERTIFICATE` — base64 экспортированного Developer ID Application `.p12`;
-- `APPLE_CERTIFICATE_PASSWORD`;
-- `APPLE_SIGNING_IDENTITY`;
-- `KEYCHAIN_PASSWORD`;
-- `APPLE_ID`;
-- `APPLE_PASSWORD` — app-specific password;
-- `APPLE_TEAM_ID`.
+GitHub Actions собирает только Fedora-пакеты; Apple secrets не требуются.
+macOS build остаётся локальной командой и не публикуется workflow.
 
 Workflow создаёт:
 
 - Fedora 44 x86_64 `.rpm` и `.AppImage`;
-- universal macOS `.dmg` с arm64 и x86_64;
 - общий `SHA256SUMS.txt`;
-- GitHub Release только после успешных Fedora и macOS jobs.
+- GitHub Release только после успешной Fedora job.
 
 ## Автоматические проверки
 
@@ -62,7 +51,6 @@ Workflow создаёт:
 - чистая установка, повторная установка и удаление `.rpm`;
 - сохранение пользовательской базы после удаления пакета;
 - восстановление резервной копии SQLite в Rust-тесте;
-- `codesign`, Gatekeeper assessment и stapler validation подписанной macOS-сборки;
 - SHA-256 для каждого публикуемого пакета.
 
 Версия 0.1.0 создаёт схему базы с нуля. Предыдущего публичного формата базы ещё нет;

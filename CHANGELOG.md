@@ -17,5 +17,5 @@
 
 ### Платформы
 
-- macOS: universal `.app` и `.dmg` для Apple Silicon и Intel.
+- macOS: universal `.app` и `.dmg` для Apple Silicon и Intel собираются локально.
 - Fedora 44 x86_64: `.rpm` и `.AppImage`, собираемые GitHub Actions.

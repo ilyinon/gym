@@ -72,96 +72,10 @@ jobs:
           path: release-artifacts/fedora/*
           if-no-files-found: error
 
-  macos:
-    name: macOS universal package
-    needs: verify
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-          cache: npm
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "./src-tauri -> target"
-
-      - run: npm ci
-      - name: Require Apple release credentials for version tags
-        if: github.event_name == 'push'
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID KEYCHAIN_PASSWORD; do
-            test -n "${!name}" || { echo "Missing required secret: $name"; exit 1; }
-          done
-
-      - name: Import Developer ID certificate when configured
-        env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          if [ -z "$APPLE_CERTIFICATE" ]; then
-            echo "No Apple certificate: workflow_dispatch will create an ad-hoc signed build."
-            exit 0
-          fi
-          certificate_path="$RUNNER_TEMP/gym-certificate.p12"
-          keychain_path="$RUNNER_TEMP/gym-build.keychain-db"
-          echo "$APPLE_CERTIFICATE" | base64 --decode > "$certificate_path"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
-          security set-keychain-settings -lut 21600 "$keychain_path"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
-          security import "$certificate_path" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
-          security list-keychain -d user -s "$keychain_path" login.keychain-db
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$keychain_path"
-          security find-identity -v -p codesigning "$keychain_path"
-          echo "GYM_SIGNED_RELEASE=true" >> "$GITHUB_ENV"
-
-      - name: Build universal app and DMG
-        env:
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          if [ "$GYM_SIGNED_RELEASE" = "true" ]; then
-            npm run release:macos
-          else
-            APPLE_SIGNING_IDENTITY=- npm run release:macos
-          fi
-
-      - name: Verify signature, notarization and stapling
-        if: env.GYM_SIGNED_RELEASE == 'true'
-        run: |
-          app_path="$(find src-tauri/target/universal-apple-darwin/release/bundle/macos -name '*.app' -print -quit)"
-          dmg_path="$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -name '*.dmg' -print -quit)"
-          codesign --verify --deep --strict --verbose=2 "$app_path"
-          spctl --assess --type execute --verbose=2 "$app_path"
-          xcrun stapler validate "$app_path"
-          xcrun stapler validate "$dmg_path"
-
-      - name: Collect artifacts and SHA-256
-        run: npm run release:collect:macos
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gym-${{ github.ref_name }}-macos-universal
-          path: release-artifacts/macos/*
-          if-no-files-found: error
-
   publish:
     name: Publish GitHub release
     if: github.event_name == 'push'
-    needs: [fedora, macos]
+    needs: [fedora]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -172,9 +86,9 @@ jobs:
       - name: Prepare release assets and combined checksums
         run: |
           mkdir -p release-assets
-          find downloaded-artifacts -type f \( -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' \) -exec cp {} release-assets/ \;
+          find downloaded-artifacts -type f \( -name '*.rpm' -o -name '*.AppImage' \) -exec cp {} release-assets/ \;
           cd release-assets
-          find . -maxdepth 1 -type f \( -name '*.rpm' -o -name '*.AppImage' -o -name '*.dmg' \) -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          find . -maxdepth 1 -type f \( -name '*.rpm' -o -name '*.AppImage' \) -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
