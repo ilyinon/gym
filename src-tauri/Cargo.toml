@@ -1,6 +1,6 @@
 [package]
 name = "gym"
-version = "0.1.0"
+version = "0.1.1"
 description = "Локальное приложение для напоминаний о тренировках и их учёта"
 authors = ["Gym contributors"]
 edition = "2021"
